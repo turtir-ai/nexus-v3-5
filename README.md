@@ -54,6 +54,7 @@ Latest local quality report (`~/.claude/state/quality_report.json`) shows:
     ├── run_all.py
     ├── test_utils.py
     ├── test_hook_io_parsing.py
+    ├── test_nexus_exec_bridge.py
     ├── test_quality_gate_records_learning_and_incident_on_fail.py
     ├── test_self_heal_records_incident_on_tool_failure.py
     └── test_task_manager_metrics.py
@@ -118,6 +119,15 @@ When scripts run outside Claude Code, hooks are not triggered automatically.
 
 `nexus_exec.py` runs a command and then emits a Claude-compatible event into
 the NEXUS pipeline (`quality_gate -> self_heal -> auto_learn`).
+
+Before execution it performs Python preflight checks when applicable:
+- AST parse / syntax sanity
+- import smoke check
+- `py_compile`
+- `ruff check` (if available)
+
+If preflight fails, command execution is blocked and NEXUS still records
+incident/learning evidence.
 
 Example:
 ```bash
@@ -196,8 +206,8 @@ python3 ~/.claude/tests/run_all.py
 ```
 
 Expected:
-- `PASS ...` for all 4 tests
-- `RESULT: passed=4 failed=0`
+- `PASS ...` for all 5 tests
+- `RESULT: passed=5 failed=0`
 
 ### 2) Generate Quality Report
 ```bash

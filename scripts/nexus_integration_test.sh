@@ -393,9 +393,16 @@ scenario_s6_standalone_bridge() {
     initial_incidents=$(count_jsonl "$STATE_DIR/incidents.jsonl")
     initial_fix_tasks=$(count_jsonl "$STATE_DIR/fix_queue.jsonl")
 
+    local standalone_file="$TEST_TMP_DIR/standalone_bad.py"
+    cat > "$standalone_file" <<'EOF'
+import treadling
+
+print(user_status)
+EOF
+
     local bridge_output bridge_rc
     set +e
-    bridge_output=$(python3 "$nexus_exec" --cwd "$TEST_TMP_DIR" -- python3 -c "import definitely_missing_module_bridge_s6" 2>&1)
+    bridge_output=$(python3 "$nexus_exec" --cwd "$TEST_TMP_DIR" -- python3 "$standalone_file" 2>&1)
     bridge_rc=$?
     set -e
 
@@ -403,12 +410,17 @@ scenario_s6_standalone_bridge() {
     final_incidents=$(count_jsonl "$STATE_DIR/incidents.jsonl")
     final_fix_tasks=$(count_jsonl "$STATE_DIR/fix_queue.jsonl")
 
-    if [[ "$bridge_rc" -ne 0 ]] && [[ "$final_incidents" -gt "$initial_incidents" ]] && [[ "$final_fix_tasks" -gt "$initial_fix_tasks" ]] && echo "$bridge_output" | grep -q '"self_heal"'; then
+    local preflight_passed
+    preflight_passed=$(python3 -c 'import json,re,sys; raw=sys.stdin.read(); m=re.search(r"(\{[\s\S]*\})\s*$", raw); data=json.loads(m.group(1)) if m else {}; print("1" if (data.get("preflight",{}).get("passed") is False) else "0")' <<<"$bridge_output" 2>/dev/null || echo "0")
+    local command_rc
+    command_rc=$(python3 -c 'import json,re,sys; raw=sys.stdin.read(); m=re.search(r"(\{[\s\S]*\})\s*$", raw); data=json.loads(m.group(1)) if m else {}; print(data.get("command_exit_code",-1))' <<<"$bridge_output" 2>/dev/null || echo "-1")
+
+    if [[ "$bridge_rc" -ne 0 ]] && [[ "$command_rc" -eq 97 ]] && [[ "$preflight_passed" == "1" ]] && [[ "$final_incidents" -gt "$initial_incidents" ]] && [[ "$final_fix_tasks" -gt "$initial_fix_tasks" ]] && echo "$bridge_output" | grep -q '"self_heal"'; then
         test_pass "Standalone bridge triggers NEXUS pipeline (incidents: $initial_incidents → $final_incidents, fix_tasks: $initial_fix_tasks → $final_fix_tasks)"
         return 0
     fi
 
-    test_fail "Standalone bridge did not trigger expected pipeline behavior"
+    test_fail "Standalone bridge did not trigger expected preflight/pipeline behavior"
     return 1
 }
 

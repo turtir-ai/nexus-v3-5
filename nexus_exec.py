@@ -2,24 +2,28 @@
 """Standalone command bridge for NEXUS hook pipeline.
 
 Runs an arbitrary command and feeds a Claude-compatible PostToolUse event into
-quality gate / self-heal / auto-learn hooks so standalone scripts can benefit
+quality_gate / self_heal / auto_learn hooks so standalone scripts can benefit
 from the same safety and learning pipeline.
 """
 from __future__ import annotations
 
 import argparse
+import ast
+import importlib.util
 import json
 import os
 import pathlib
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 CLAUDE_DIR = pathlib.Path.home() / ".claude"
 HOOKS_DIR = CLAUDE_DIR / "hooks"
+_STDLIB_MODULES = set(getattr(sys, "stdlib_module_names", set()))
 
 
 def _now_iso() -> str:
@@ -94,7 +98,7 @@ def _run_fix_process_one(cwd: pathlib.Path) -> Dict[str, Any]:
     }
 
 
-def _build_event(command_str: str, cwd: pathlib.Path, rc: int, stdout: str, stderr: str, duration: float) -> Dict[str, Any]:
+def _build_event(command_str: str, cwd: pathlib.Path, rc: int, stdout: str, stderr: str, duration: float, preflight: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "tool_name": "Bash",
         "tool_input": {
@@ -107,10 +111,218 @@ def _build_event(command_str: str, cwd: pathlib.Path, rc: int, stdout: str, stde
             "stdout": _truncate(stdout),
             "stderr": _truncate(stderr),
             "duration_sec": round(duration, 4),
+            "preflight": preflight,
         },
         "cwd": str(cwd),
         "timestamp": _now_iso(),
     }
+
+
+def _is_python_executable(executable: str) -> bool:
+    name = pathlib.Path(executable).name.lower()
+    return name.startswith("python")
+
+
+def _extract_python_target(command_args: List[str], cwd: pathlib.Path) -> Optional[Dict[str, str]]:
+    if not command_args:
+        return None
+    if not _is_python_executable(command_args[0]):
+        return None
+
+    idx = 1
+    while idx < len(command_args):
+        token = command_args[idx]
+
+        if token == "-c" and idx + 1 < len(command_args):
+            return {"kind": "inline", "value": command_args[idx + 1]}
+
+        if token == "-m" and idx + 1 < len(command_args):
+            return {"kind": "module", "value": command_args[idx + 1]}
+
+        if token.startswith("-"):
+            idx += 1
+            continue
+
+        candidate = pathlib.Path(token)
+        if not candidate.is_absolute():
+            candidate = (cwd / candidate).resolve()
+        return {"kind": "file", "value": str(candidate)}
+
+    return None
+
+
+def _module_available(module_name: str, cwd: pathlib.Path) -> bool:
+    root_name = module_name.split(".")[0]
+    if root_name in _STDLIB_MODULES:
+        return True
+
+    old_sys_path = list(sys.path)
+    try:
+        if str(cwd) not in sys.path:
+            sys.path.insert(0, str(cwd))
+        return importlib.util.find_spec(root_name) is not None
+    except Exception:
+        return False
+    finally:
+        sys.path[:] = old_sys_path
+
+
+def _collect_imports_from_source(source: str) -> List[str]:
+    tree = ast.parse(source)
+    modules = set()
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                modules.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level and node.level > 0:
+                continue
+            if node.module:
+                modules.add(node.module)
+
+    return sorted(modules)
+
+
+def _run_preflight_for_source(source: str, cwd: pathlib.Path, source_path: Optional[pathlib.Path]) -> List[Dict[str, Any]]:
+    checks: List[Dict[str, Any]] = []
+
+    try:
+        ast.parse(source)
+        checks.append({"name": "ast_parse", "ok": True, "detail": "syntax parse ok"})
+    except SyntaxError as exc:
+        checks.append({"name": "ast_parse", "ok": False, "detail": f"SyntaxError: {exc}"})
+        return checks
+
+    imports = _collect_imports_from_source(source)
+    missing_imports = [mod for mod in imports if not _module_available(mod, cwd)]
+    checks.append(
+        {
+            "name": "import_smoke",
+            "ok": len(missing_imports) == 0,
+            "detail": "all imports resolvable" if not missing_imports else f"missing imports: {', '.join(missing_imports)}",
+            "missing": missing_imports,
+        }
+    )
+
+    if source_path is not None:
+        py_compile_proc = subprocess.run(
+            ["python3", "-m", "py_compile", str(source_path)],
+            text=True,
+            capture_output=True,
+        )
+        checks.append(
+            {
+                "name": "py_compile",
+                "ok": py_compile_proc.returncode == 0,
+                "detail": (py_compile_proc.stderr or py_compile_proc.stdout or "ok").strip()[:1000],
+            }
+        )
+
+    if shutil_which("ruff") is not None:
+        if source_path is None:
+            with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as handle:
+                handle.write(source)
+                tmp_path = pathlib.Path(handle.name)
+            try:
+                ruff_proc = subprocess.run(
+                    ["ruff", "check", str(tmp_path)],
+                    text=True,
+                    capture_output=True,
+                    cwd=str(cwd),
+                )
+            finally:
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+        else:
+            ruff_proc = subprocess.run(
+                ["ruff", "check", str(source_path)],
+                text=True,
+                capture_output=True,
+                cwd=str(cwd),
+            )
+
+        checks.append(
+            {
+                "name": "ruff",
+                "ok": ruff_proc.returncode == 0,
+                "detail": (ruff_proc.stdout or ruff_proc.stderr or "ok").strip()[:1000],
+            }
+        )
+
+    return checks
+
+
+def shutil_which(command: str) -> Optional[str]:
+    return subprocess.run(["bash", "-lc", f"command -v {shlex.quote(command)}"], text=True, capture_output=True).stdout.strip() or None
+
+
+def _run_preflight(command_args: List[str], cwd: pathlib.Path, use_shell: bool) -> Dict[str, Any]:
+    preflight_args = list(command_args)
+    if use_shell and len(command_args) == 1:
+        try:
+            preflight_args = shlex.split(command_args[0])
+        except ValueError:
+            return {
+                "ran": False,
+                "passed": True,
+                "target": None,
+                "checks": [{"name": "skip", "ok": True, "detail": "shell command not parseable"}],
+            }
+
+    target = _extract_python_target(preflight_args, cwd)
+    if target is None:
+        return {
+            "ran": False,
+            "passed": True,
+            "target": None,
+            "checks": [{"name": "skip", "ok": True, "detail": "non-python command"}],
+        }
+
+    checks: List[Dict[str, Any]] = []
+    kind = target["kind"]
+    value = target["value"]
+
+    if kind == "file":
+        source_path = pathlib.Path(value)
+        if not source_path.exists():
+            checks.append({"name": "file_exists", "ok": False, "detail": f"missing file: {source_path}"})
+        else:
+            checks.append({"name": "file_exists", "ok": True, "detail": str(source_path)})
+            source = source_path.read_text(encoding="utf-8", errors="replace")
+            checks.extend(_run_preflight_for_source(source, cwd, source_path))
+
+    elif kind == "inline":
+        checks.extend(_run_preflight_for_source(value, cwd, None))
+
+    elif kind == "module":
+        module_ok = _module_available(value, cwd)
+        checks.append(
+            {
+                "name": "module_spec",
+                "ok": module_ok,
+                "detail": f"module {value} {'resolvable' if module_ok else 'not found'}",
+            }
+        )
+
+    passed = all(bool(check.get("ok")) for check in checks)
+    return {
+        "ran": True,
+        "passed": passed,
+        "target": target,
+        "checks": checks,
+    }
+
+
+def _format_preflight_failure(preflight: Dict[str, Any]) -> str:
+    lines = ["NEXUS preflight failed; command was not executed."]
+    for check in preflight.get("checks", []):
+        if check.get("ok"):
+            continue
+        lines.append(f"- {check.get('name')}: {check.get('detail')}")
+    return "\n".join(lines)
 
 
 def parse_args() -> argparse.Namespace:
@@ -120,6 +332,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for command and hooks")
     parser.add_argument("--shell", action="store_true", help="Execute command through shell")
+    parser.add_argument("--skip-preflight", action="store_true", help="Skip static preflight checks")
     parser.add_argument("--skip-quality-gate", action="store_true", help="Skip quality gate hook")
     parser.add_argument("--skip-auto-learn", action="store_true", help="Skip auto-learn hook")
     parser.add_argument("--process-fix-one", action="store_true", help="Run one fix verification after hooks")
@@ -149,29 +362,51 @@ def main() -> int:
         command_str = " ".join(shlex.quote(part) for part in command_args)
         command_for_run = command_args
 
-    start = time.time()
-    cmd_proc = subprocess.run(
-        command_for_run,
-        cwd=str(cwd),
-        text=True,
-        capture_output=True,
-        shell=args.shell,
-    )
-    duration = time.time() - start
+    preflight_result = {
+        "ran": False,
+        "passed": True,
+        "target": None,
+        "checks": [{"name": "skip", "ok": True, "detail": "disabled"}],
+    }
+    if not args.skip_preflight:
+        preflight_result = _run_preflight(command_args, cwd, args.shell)
+
+    command_stdout = ""
+    command_stderr = ""
+    command_rc = 0
+    duration = 0.0
+
+    if preflight_result.get("ran") and not preflight_result.get("passed"):
+        command_rc = 97
+        command_stderr = _format_preflight_failure(preflight_result)
+    else:
+        start = time.time()
+        cmd_proc = subprocess.run(
+            command_for_run,
+            cwd=str(cwd),
+            text=True,
+            capture_output=True,
+            shell=args.shell,
+        )
+        duration = time.time() - start
+        command_rc = cmd_proc.returncode
+        command_stdout = cmd_proc.stdout
+        command_stderr = cmd_proc.stderr
 
     if not args.json_only:
-        if cmd_proc.stdout:
-            sys.stdout.write(cmd_proc.stdout)
-        if cmd_proc.stderr:
-            sys.stderr.write(cmd_proc.stderr)
+        if command_stdout:
+            sys.stdout.write(command_stdout)
+        if command_stderr:
+            sys.stderr.write(command_stderr)
 
     event = _build_event(
         command_str=command_str,
         cwd=cwd,
-        rc=cmd_proc.returncode,
-        stdout=cmd_proc.stdout,
-        stderr=cmd_proc.stderr,
+        rc=command_rc,
+        stdout=command_stdout,
+        stderr=command_stderr,
         duration=duration,
+        preflight=preflight_result,
     )
 
     quality_gate_result = {
@@ -191,7 +426,7 @@ def main() -> int:
         "stdout": "",
         "stderr": "",
     }
-    if cmd_proc.returncode != 0:
+    if command_rc != 0:
         self_heal_result = _run_hook(HOOKS_DIR / "nexus_self_heal.py", event, cwd)
 
     auto_learn_result = {
@@ -214,7 +449,7 @@ def main() -> int:
     if args.process_fix_one:
         fix_process_result = _run_fix_process_one(cwd)
 
-    overall_exit = cmd_proc.returncode
+    overall_exit = command_rc
     if overall_exit == 0 and quality_gate_result.get("exit_code", 0) != 0:
         overall_exit = int(quality_gate_result.get("exit_code", 0))
 
@@ -222,7 +457,8 @@ def main() -> int:
         "timestamp": _now_iso(),
         "cwd": str(cwd),
         "command": command_str,
-        "command_exit_code": cmd_proc.returncode,
+        "preflight": preflight_result,
+        "command_exit_code": command_rc,
         "quality_gate": {
             "ran": quality_gate_result["ran"],
             "exit_code": quality_gate_result["exit_code"],

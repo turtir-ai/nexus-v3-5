@@ -45,6 +45,9 @@ python3 ~/.claude/nexus_exec.py -- <your command>
 ```
 This preserves quality gate, self-heal, and learning evidence for standalone flows.
 
+Default behavior includes Python preflight checks (syntax/import/lint). Use
+`--skip-preflight` only when you explicitly need to bypass static checks.
+
 ## Optional Strict Mode Prompt
 Use this when output quality drops:
 

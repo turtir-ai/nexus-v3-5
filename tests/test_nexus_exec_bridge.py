@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from test_utils import git_commit_all, init_git_repo, prepare_sandbox, read_jsonl, run_python
@@ -14,7 +15,8 @@ def run_test() -> None:
     project = sandbox["root"] / "standalone_project"
     project.mkdir(parents=True, exist_ok=True)
 
-    (project / "main.py").write_text("def ok():\n    return 1\n")
+    # Missing import should be caught by preflight without executing command.
+    (project / "main.py").write_text("import definitely_missing_module_bridge\n\nprint('should_not_run')\n")
     init_git_repo(project)
     git_commit_all(project, "initial")
 
@@ -26,10 +28,15 @@ def run_test() -> None:
         claude / "nexus_exec.py",
         home=home,
         cwd=project,
-        args=["--", "python3", "-c", "import definitely_missing_module_bridge"],
+        args=["--", "python3", "main.py"],
     )
 
     assert proc.returncode != 0, proc.stdout + "\n" + proc.stderr
+    summary = json.loads(proc.stdout)
+    assert summary.get("preflight", {}).get("ran") is True
+    assert summary.get("preflight", {}).get("passed") is False
+    assert int(summary.get("command_exit_code", 0)) == 97
+    assert "missing imports" in (proc.stderr + proc.stdout).lower()
 
     incidents_after = len(read_jsonl(claude / "state" / "incidents.jsonl"))
     fix_after = len(read_jsonl(claude / "state" / "fix_queue.jsonl"))
