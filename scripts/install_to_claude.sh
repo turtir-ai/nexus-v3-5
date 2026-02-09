@@ -11,6 +11,7 @@ CORE_FILES=(
   "state_manager.py"
   "task_manager.py"
   "nexus_cli.py"
+  "nexus_exec.py"
   "agent_runtime.py"
   "generate_quality_report.py"
 )
@@ -29,6 +30,7 @@ TEST_FILES=(
   "run_all.py"
   "test_utils.py"
   "test_hook_io_parsing.py"
+  "test_nexus_exec_bridge.py"
   "test_quality_gate_records_learning_and_incident_on_fail.py"
   "test_self_heal_records_incident_on_tool_failure.py"
   "test_task_manager_metrics.py"
@@ -77,7 +79,7 @@ copy_tests
 
 cp -f "$REPO_ROOT/settings.nexus.sample.json" "$CLAUDE_DIR/settings.nexus.sample.json"
 
-chmod +x "$CLAUDE_DIR/nexus_cli.py"
+chmod +x "$CLAUDE_DIR/nexus_cli.py" "$CLAUDE_DIR/nexus_exec.py"
 
 cat <<EOF
 Install complete.

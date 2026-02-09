@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 TEST_MODULES = [
     "test_hook_io_parsing",
+    "test_nexus_exec_bridge",
     "test_quality_gate_records_learning_and_incident_on_fail",
     "test_self_heal_records_incident_on_tool_failure",
     "test_task_manager_metrics",

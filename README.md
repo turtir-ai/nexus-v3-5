@@ -47,6 +47,7 @@ Latest local quality report (`~/.claude/state/quality_report.json`) shows:
 ├── state_manager.py
 ├── task_manager.py
 ├── nexus_cli.py
+├── nexus_exec.py
 ├── agent_runtime.py
 ├── generate_quality_report.py
 └── tests/
@@ -111,6 +112,22 @@ Metrics update in `performance_metrics.json`.
 - `fix` / `implement` -> `pilot`
 
 It writes dispatch + action-plan messages to `agent_messages.jsonl`.
+
+### 7) Standalone Bridge (`nexus_exec.py`)
+When scripts run outside Claude Code, hooks are not triggered automatically.
+
+`nexus_exec.py` runs a command and then emits a Claude-compatible event into
+the NEXUS pipeline (`quality_gate -> self_heal -> auto_learn`).
+
+Example:
+```bash
+python3 ~/.claude/nexus_exec.py -- python3 my_script.py
+```
+
+With optional fix processing:
+```bash
+python3 ~/.claude/nexus_exec.py --process-fix-one -- python3 -c "import definitely_missing_module"
+```
 
 ## Fresh Install On a New Computer
 
@@ -227,6 +244,11 @@ Fix queue operations:
 ```bash
 python3 ~/.claude/nexus_cli.py fix stats
 python3 ~/.claude/nexus_cli.py fix process-one
+```
+
+Standalone execution with NEXUS protections:
+```bash
+python3 ~/.claude/nexus_exec.py -- python3 your_standalone_script.py
 ```
 
 Dispatcher example:

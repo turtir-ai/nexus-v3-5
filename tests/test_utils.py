@@ -15,6 +15,7 @@ FILES_TO_COPY = [
     "state_manager.py",
     "task_manager.py",
     "nexus_cli.py",
+    "nexus_exec.py",
     "agent_runtime.py",
     "generate_quality_report.py",
     "hooks/_hook_io.py",

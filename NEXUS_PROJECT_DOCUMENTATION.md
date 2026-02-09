@@ -46,6 +46,7 @@ NEXUS is an autonomous meta-cognitive agent system designed to enhance Claude Co
 ├── agent_runtime.py               # Runtime + discover scan engine
 ├── task_manager.py                # Task lifecycle tracker
 ├── nexus_cli.py                   # CLI: status/task/fix commands
+├── nexus_exec.py                  # Standalone bridge to NEXUS hook pipeline
 ├── generate_quality_report.py     # Quality scoring (V3.5 model)
 ├── settings.json                  # Claude Code hook configuration
 ├── CHANGELOG.md                   # Version history
@@ -64,6 +65,7 @@ NEXUS is an autonomous meta-cognitive agent system designed to enhance Claude Co
 ├── tests/
 │   ├── run_all.py
 │   ├── test_hook_io_parsing.py
+│   ├── test_nexus_exec_bridge.py
 │   ├── test_quality_gate_records_learning_and_incident_on_fail.py
 │   ├── test_self_heal_records_incident_on_tool_failure.py
 │   └── test_task_manager_metrics.py
@@ -258,6 +260,7 @@ def rollback(root, snap_path):
 | `agent_runtime.py` | 400+ | Multi-agent runtime + mental model scan | ✅ Working |
 | `task_manager.py` | 200+ | Task lifecycle and completion metrics | ✅ Working |
 | `nexus_cli.py` | 100+ | Task/fix/status deterministic CLI | ✅ Working |
+| `nexus_exec.py` | 250+ | Standalone command wrapper for quality/self-heal/learn hooks | ✅ Working |
 | `generate_quality_report.py` | 250+ | V3.5 quality scoring | ✅ Working |
 | `quality_gate.py` | 400+ | Quality enforcement + rollback + incident/fix | ✅ Working |
 | `fix_queue.py` | 340+ | Fix queue + verify-only processing loop | ✅ Working |

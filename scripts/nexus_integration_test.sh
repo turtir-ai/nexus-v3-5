@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # NEXUS V3.5.0 - Integration Test Harness
-# Tests all 5 scenarios from the Codex-Grade Upgrade Brief
+# Tests core scenarios plus standalone bridge coverage
 #
 # Usage: ./scripts/nexus_integration_test.sh [--scenario N] [--verbose]
 #
@@ -379,6 +379,39 @@ scenario_s5_discover_file_scan() {
     fi
 }
 
+# Scenario 6: Standalone bridge through nexus_exec.py
+scenario_s6_standalone_bridge() {
+    test_start "S6: Standalone Bridge (nexus_exec.py)"
+
+    local nexus_exec="$HOME/.claude/nexus_exec.py"
+    if [[ ! -f "$nexus_exec" ]]; then
+        test_fail "nexus_exec.py not found at $nexus_exec"
+        return 1
+    fi
+
+    local initial_incidents initial_fix_tasks
+    initial_incidents=$(count_jsonl "$STATE_DIR/incidents.jsonl")
+    initial_fix_tasks=$(count_jsonl "$STATE_DIR/fix_queue.jsonl")
+
+    local bridge_output bridge_rc
+    set +e
+    bridge_output=$(python3 "$nexus_exec" --cwd "$TEST_TMP_DIR" -- python3 -c "import definitely_missing_module_bridge_s6" 2>&1)
+    bridge_rc=$?
+    set -e
+
+    local final_incidents final_fix_tasks
+    final_incidents=$(count_jsonl "$STATE_DIR/incidents.jsonl")
+    final_fix_tasks=$(count_jsonl "$STATE_DIR/fix_queue.jsonl")
+
+    if [[ "$bridge_rc" -ne 0 ]] && [[ "$final_incidents" -gt "$initial_incidents" ]] && [[ "$final_fix_tasks" -gt "$initial_fix_tasks" ]] && echo "$bridge_output" | grep -q '"self_heal"'; then
+        test_pass "Standalone bridge triggers NEXUS pipeline (incidents: $initial_incidents → $final_incidents, fix_tasks: $initial_fix_tasks → $final_fix_tasks)"
+        return 0
+    fi
+
+    test_fail "Standalone bridge did not trigger expected pipeline behavior"
+    return 1
+}
+
 # Bonus: Pattern Learning Verification
 bonus_pattern_learning() {
     test_start "BONUS: Pattern Learning Verification"
@@ -464,6 +497,7 @@ main() {
                 echo "  S3 - Task Metrics Increment"
                 echo "  S4 - Fix Queue Processing"
                 echo "  S5 - Discover Agent File Scan"
+                echo "  S6 - Standalone Bridge"
                 exit 0
                 ;;
             *)
@@ -506,6 +540,10 @@ main() {
 
     if [[ -z "$run_scenario" ]] || [[ "$run_scenario" == "S5" ]]; then
         scenario_s5_discover_file_scan
+    fi
+
+    if [[ -z "$run_scenario" ]] || [[ "$run_scenario" == "S6" ]]; then
+        scenario_s6_standalone_bridge
     fi
 
     # Bonus tests

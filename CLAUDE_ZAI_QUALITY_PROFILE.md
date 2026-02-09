@@ -38,6 +38,13 @@ python3 ~/.claude/tests/run_all.py
 python3 ~/.claude/generate_quality_report.py
 ```
 
+## Standalone Command Rule
+If a task is executed outside Claude Code tools, run it through:
+```bash
+python3 ~/.claude/nexus_exec.py -- <your command>
+```
+This preserves quality gate, self-heal, and learning evidence for standalone flows.
+
 ## Optional Strict Mode Prompt
 Use this when output quality drops:
 
