@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "apiKeyHelper": "~/bin/zai-key.sh",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-4.7",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-4.7",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-4.7",
+    "API_TIMEOUT_MS": "3000000"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/audit_logger.py pre"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/quality_gate.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/audit_logger.py post"
+          },
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/nexus_self_heal.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/nexus_auto_learn.py"
+          }
+        ]
+      }
+    ]
+  }
+}
