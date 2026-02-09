@@ -5,3 +5,4 @@ __pycache__/
 state/
 logs/
 demo-python-project/
+.claude/
