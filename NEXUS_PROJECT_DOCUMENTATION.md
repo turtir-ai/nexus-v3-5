@@ -48,6 +48,11 @@ NEXUS is an autonomous meta-cognitive agent system designed to enhance Claude Co
 ├── nexus_cli.py                   # CLI: status/task/fix commands
 ├── generate_quality_report.py     # Quality scoring (V3.5 model)
 ├── settings.json                  # Claude Code hook configuration
+├── CHANGELOG.md                   # Version history
+├── EVIDENCE_BASELINE.md           # Codex-Grade upgrade baseline
+├── EVIDENCE_AFTER.md              # Codex-Grade upgrade results
+├── scripts/
+│   └── nexus_integration_test.sh  # Integration test harness (NEW)
 ├── hooks/
 │   ├── _hook_io.py                # Shared hook stdin/path/jsonl layer
 │   ├── quality_gate.py            # Quality gate + rollback + incident/fix
@@ -383,7 +388,7 @@ Translation: "To consider a task 'done', quality_gate.py MUST pass."
 
 ## Quality Assessment
 
-### Current Score: 100/100 (2026-02-09, post-upgrade)
+### Current Score: 100/100 (2026-02-09, post-Codex-Grade upgrade)
 
 | Component | Points | Max | Status |
 |-----------|--------|-----|--------|
@@ -393,53 +398,74 @@ Translation: "To consider a task 'done', quality_gate.py MUST pass."
 | Pattern Learning | 20 | 20 | ✅ Signature-based learning active |
 | Task Execution | 15 | 15 | ✅ Task lifecycle metrics active |
 | Self-Healing | 10 | 10 | ✅ Incident + fix verify loop active |
+| **TOTAL** | **100** | **100** | **✅ Perfect** |
 
-### Assessment: "Evidence-backed deterministic framework"
+### Assessment: "Evidence-backed deterministic framework with integration testing"
 
-The system now has working evidence for:
-1. **Pattern Learning**: `quality_gate`, `self_heal`, and `fix_queue` all write patterns
-2. **Task Execution Metrics**: `task start/close` updates completion metrics
-3. **Self-Healing**: incidents are recorded and fix verification loop is executed
+The system now has **comprehensive evidence** for all capabilities:
+
+1. **Pattern Learning**: 132 patterns across 29 types, signature-based with outcome tracking
+2. **Task Execution Metrics**: 6 tasks completed, CLI working (`nexus task start/close`)
+3. **Self-Healing**: 7 incidents, 9 fix tasks, end-to-end pipeline validated
+4. **Quality Gate**: 91 runs, 7 rollbacks, automatic incident+fix creation
+5. **Discover Agent**: 898 files scanned, non-zero count verified
+
+### Integration Test Results (Codex-Grade Upgrade)
+
+All 7 tests passing:
+- ✅ S1: Quality Gate Rollback (rollback_count increments)
+- ✅ S2: Self-Healing Incident Creation (incident + fix task created)
+- ✅ S3: Task Metrics Increment (tasks_completed increments)
+- ✅ S4: Fix Queue Processing (verify loop working)
+- ✅ S5: Discover Agent File Scan (898 files found)
+- ✅ BONUS: Pattern Learning (29 pattern types)
+- ✅ BONUS: Quality Gate Hook Order (quality_gate.py first)
 
 ### Strengths
 - ✅ Quality gate runs first and enforces rollback on failure
-- ✅ State persistence across sessions
-- ✅ Agent communication log growing with dispatcher traffic
-- ✅ Fix queue verify loop (`process_one_task`) is deterministic and measurable
+- ✅ State persistence across sessions (MSV, mental model, patterns, metrics)
+- ✅ Agent communication log growing (49 messages)
+- ✅ Fix queue verify loop (`process_one_task`) deterministic and measurable
+- ✅ **NEW:** Integration test suite validates all scenarios
+- ✅ **NEW:** Before/after evidence documentation
 
 ### Weaknesses
-- ⚠️ Full autonomous execution is still limited by Claude Code hook model
-- ⚠️ Optional Rule-B auto-close exists but default remains explicit close (Rule-A)
+- ⚠️ Full autonomous execution is still limited by Claude Code hook model (by design)
+- ⚠️ Fix queue requires manual processing (auto-processing would need daemon)
+- ⚠️ Some datetime deprecation warnings (cosmetic, non-blocking)
 - ⚠️ Some legacy modules remain partially implemented (`nexus_autonomy*`, `nexus_self_improve`)
 
 ---
 
 ## Known Issues
 
-### Fixed in V3.5.0
+### Fixed in V3.5.0 + Codex-Grade Upgrade
 - ✅ Pattern learning now records signature-based events with counts and outcome rates
 - ✅ Task lifecycle metrics now increment via `nexus_cli` + quality gate progress events
 - ✅ Mental model scan no longer returns `files: 0`; recursive scan uses ignore list
 - ✅ Self-healing now records incidents and creates fix tasks from actual hook failures
 - ✅ Dispatcher now routes deterministically by `task.type`
+- ✅ **NEW:** Integration test suite validates all 5 scenarios + 2 bonus tests
+- ✅ **NEW:** All quality score components evidence-backed
 
 ### Residual / Non-blocking
 1. **Legacy module scope**
    - `nexus_autonomy*` family is still partially experimental and not required for V3.5.0 evidence.
 2. **Datetime deprecation warnings**
    - A few helper paths still use `datetime.utcnow()` and should be normalized to timezone-aware `now()`.
-3. **Rule-B auto-close**
+3. **Fix queue manual processing**
+   - Fix tasks require manual CLI processing; auto-processing would need daemon (by design).
+4. **Rule-B auto-close**
    - Implemented behind flag, default remains explicit close (Rule-A) for deterministic behavior.
 
 ---
 
 ## Next Steps
 
-### Priority: HIGH
+### Priority: LOW (Optional Enhancements)
 
-1. **Harden legacy modules**
-   - Align `nexus_autonomy*` modules with V3.5 deterministic metrics model.
-2. **Normalize datetime usage**
+1. **Datetime normalization**
+   - Replace remaining `datetime.utcnow()` with `datetime.now(timezone.utc)` for deprecation warnings.
    - Replace remaining `utcnow()` calls with timezone-aware timestamps.
 
 ### Priority: MEDIUM

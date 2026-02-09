@@ -111,7 +111,7 @@ def main() -> int:
     signature = _signature_for_incident(incident_class, tool_response)
 
     incident = {
-        "id": f"inc_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}",
+        "id": f"inc_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}",
         "timestamp": _now_iso(),
         "source": "nexus_self_heal",
         "incident_class": incident_class,

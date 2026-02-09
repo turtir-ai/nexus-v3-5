@@ -124,7 +124,7 @@ def changed_files_summary(root: pathlib.Path, event: Dict[str, Any]) -> Dict[str
 
 
 def snapshot_files(root: pathlib.Path, changed_files: List[str]) -> pathlib.Path:
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     snap = SNAP_DIR / ts
     snap.mkdir(parents=True, exist_ok=True)
 
@@ -337,7 +337,7 @@ def main() -> int:
     if not passed:
         rollback_method = rollback(root, snap)
 
-        incident_id = f"inc_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}"
+        incident_id = f"inc_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}"
         incident = {
             "id": incident_id,
             "timestamp": _now_iso(),
